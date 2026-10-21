@@ -85,21 +85,69 @@
   const otherStyle = { color: '#cbc4b4', weight: 1, fillColor: '#e2ddd0', fillOpacity: 1 };
   const othersLayer = L.geoJSON([GEO.sweden, GEO.denmark], { style: otherStyle, interactive: false }).addTo(map);
   const skaneLayer = L.geoJSON(GEO.skane, { interactive: false }).addTo(map);
-  const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19,
-  });
   const gameLayer = L.layerGroup().addTo(map);
+
+  // Bakgrundskarta med vägar: OpenFreeMap (gratis vektorkarta utan API-nyckel) där alla
+  // ortnamn och etiketter tas bort så att man inte kan fuska. Laddas först när den slås på.
+  // Går den inte att ladda (eller saknas WebGL) används Esris grå karta utan namn i stället.
+  const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  let baseLayer = null;
+  let baseLoading = null;
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Kunde inte ladda ' + src));
+      document.head.appendChild(s);
+    });
+  }
+  function hasWebGL() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(c.getContext('webgl2') || c.getContext('webgl'));
+    } catch { return false; }
+  }
+  async function vectorBase() {
+    if (!hasWebGL()) throw new Error('WebGL saknas');
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'vendor/maplibre/maplibre-gl.css';
+    document.head.appendChild(css);
+    await loadScript('vendor/maplibre/maplibre-gl.js');
+    await loadScript('vendor/maplibre/leaflet-maplibre-gl.js');
+    const res = await fetch('https://tiles.openfreemap.org/styles/positron');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const style = await res.json();
+    style.layers = style.layers.filter((l) => l.type !== 'symbol');
+    return L.maplibreGL({ style, attributionControl: { customAttribution: '<a href="https://openfreemap.org">OpenFreeMap</a> ' + OSM_ATTR } });
+  }
+  function rasterBase() {
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Bakgrund © Esri',
+      maxZoom: 16,
+    });
+  }
+  function getBaseLayer() {
+    if (!baseLoading) {
+      baseLoading = vectorBase()
+        .catch((err) => {
+          console.warn('Vektorkartan gick inte att ladda, använder Esri:', err);
+          return rasterBase();
+        })
+        .then((layer) => (baseLayer = layer));
+    }
+    return baseLoading;
+  }
 
   function applyTiles() {
     if (settings.tiles) {
-      tileLayer.addTo(map);
-      tileLayer.bringToBack();
+      getBaseLayer().then((layer) => { if (settings.tiles) layer.addTo(map); });
       othersLayer.setStyle({ ...otherStyle, fillOpacity: 0.55 });
       skaneLayer.setStyle({ color: '#c8102e', weight: 2, fillOpacity: 0 });
     } else {
-      map.removeLayer(tileLayer);
+      if (baseLayer) map.removeLayer(baseLayer);
       othersLayer.setStyle(otherStyle);
       skaneLayer.setStyle({ color: '#8f8571', weight: 1.5, fillColor: '#f6f1e4', fillOpacity: 1 });
     }
