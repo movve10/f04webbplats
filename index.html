@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Skånekoll</title>
+  <meta name="description" content="Öva på skånska orter och tävla mot kompisar – vem har bäst koll på Skåne?">
+  <meta name="theme-color" content="#c8102e">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='10' height='10' fill='%23c8102e'/%3E%3Crect x='3' width='1.6' height='10' fill='%23ffcd00'/%3E%3Crect y='4.2' width='10' height='1.6' fill='%23ffcd00'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Spel-HUD (visas ovanpå kartan under spel) -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <button class="icon-btn" id="hud-quit" title="Avsluta" aria-label="Avsluta">✕</button>
+      <div class="prompt">
+        <div class="prompt-label" id="hud-label">Var ligger</div>
+        <div class="prompt-town" id="hud-town">–</div>
+      </div>
+      <div class="hud-stats">
+        <div id="hud-round">1/10</div>
+        <div id="hud-score">0 p</div>
+      </div>
+    </div>
+    <div class="timer hidden" id="hud-timer"><div class="timer-bar" id="hud-timer-bar"></div></div>
+    <div class="hud-msg hidden" id="hud-msg"></div>
+    <div class="hud-bottom" id="hud-bottom">
+      <div class="hud-info" id="hud-info"></div>
+      <button class="btn primary" id="hud-action" disabled>Lås gissning</button>
+    </div>
+  </div>
+
+  <!-- Menyer / overlay-skärmar -->
+  <div id="overlay">
+
+    <section class="screen" id="screen-home">
+      <div class="card">
+        <div class="brand">
+          <div class="flag" aria-hidden="true"></div>
+          <div>
+            <h1>Skånekoll</h1>
+            <p class="sub">Hörru, har du koll på Skåne?</p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Vilka orter?</label>
+          <div class="seg" id="set-seg">
+            <button data-v="kommun">Kommunhuvudorter</button>
+            <button data-v="stor">Större orter</button>
+            <button data-v="alla">Alla orter</button>
+          </div>
+          <div class="hint" id="set-hint"></div>
+        </div>
+
+        <h2>Öva själv</h2>
+        <div class="grid2">
+          <button class="mode" id="go-find">
+            <span class="mode-title">Hitta orten</span>
+            <span class="mode-desc">Som Seterra – klicka på rätt prick</span>
+          </button>
+          <button class="mode" id="go-guess">
+            <span class="mode-title">Gissa var</span>
+            <span class="mode-desc">Klicka var du tror orten ligger</span>
+          </button>
+        </div>
+
+        <h2>Tävla (2–10 spelare)</h2>
+        <div class="grid2">
+          <button class="mode" id="go-host">
+            <span class="mode-title">Skapa rum</span>
+            <span class="mode-desc">Alla spelar på sin egen mobil</span>
+          </button>
+          <button class="mode" id="go-join">
+            <span class="mode-title">Gå med i rum</span>
+            <span class="mode-desc">Har du fått en kod?</span>
+          </button>
+        </div>
+        <button class="btn ghost wide" id="go-local">Spela på samma enhet (turas om)</button>
+
+        <label class="check"><input type="checkbox" id="opt-tiles"> Visa bakgrundskarta med vägar (lättare)</label>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-local">
+      <div class="card">
+        <h1>Samma enhet</h1>
+        <p class="sub">Skriv in alla som är med. Ni turas om att gissa – den som kommer närmast får mest poäng.</p>
+        <div id="local-players"></div>
+        <div class="row">
+          <input type="text" id="local-name" maxlength="16" placeholder="Namn" autocomplete="off">
+          <button class="btn" id="local-add">Lägg till</button>
+        </div>
+        <div class="field">
+          <label>Antal rundor</label>
+          <div class="seg" id="local-rounds-seg">
+            <button data-v="5">5</button><button data-v="10">10</button><button data-v="15">15</button><button data-v="20">20</button>
+          </div>
+        </div>
+        <div class="row end">
+          <button class="btn ghost" data-back>Tillbaka</button>
+          <button class="btn primary" id="local-start" disabled>Starta</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-join">
+      <div class="card">
+        <h1>Gå med i rum</h1>
+        <div class="field">
+          <label for="join-code">Rumskod</label>
+          <input type="text" id="join-code" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" class="code-input">
+        </div>
+        <div class="field">
+          <label for="join-name">Ditt namn</label>
+          <input type="text" id="join-name" maxlength="16" placeholder="Namn" autocomplete="off">
+        </div>
+        <div class="error hidden" id="join-error"></div>
+        <div class="row end">
+          <button class="btn ghost" data-back>Tillbaka</button>
+          <button class="btn primary" id="join-go">Gå med</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-hostname">
+      <div class="card">
+        <h1>Skapa rum</h1>
+        <div class="field">
+          <label for="host-name">Ditt namn</label>
+          <input type="text" id="host-name" maxlength="16" placeholder="Namn" autocomplete="off">
+        </div>
+        <div class="error hidden" id="host-error"></div>
+        <div class="row end">
+          <button class="btn ghost" data-back>Tillbaka</button>
+          <button class="btn primary" id="host-go">Skapa</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-lobby">
+      <div class="card">
+        <div class="lobby-head">
+          <div>
+            <div class="sub">Rumskod</div>
+            <div class="room-code" id="lobby-code">····</div>
+          </div>
+          <button class="btn" id="lobby-share">Dela länk</button>
+        </div>
+        <div class="hint" id="lobby-status">Ansluter…</div>
+        <h2>Spelare <span id="lobby-count"></span></h2>
+        <ul class="players" id="lobby-players"></ul>
+
+        <div id="lobby-settings">
+          <div class="field">
+            <label>Vilka orter?</label>
+            <div class="seg" id="lobby-set-seg">
+              <button data-v="kommun">Kommunhuvudorter</button>
+              <button data-v="stor">Större orter</button>
+              <button data-v="alla">Alla orter</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Antal rundor</label>
+            <div class="seg" id="lobby-rounds-seg">
+              <button data-v="5">5</button><button data-v="10">10</button><button data-v="15">15</button><button data-v="20">20</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Tid per runda</label>
+            <div class="seg" id="lobby-time-seg">
+              <button data-v="10">10 s</button><button data-v="15">15 s</button><button data-v="20">20 s</button><button data-v="30">30 s</button>
+            </div>
+          </div>
+        </div>
+        <div class="hint hidden" id="lobby-guest-settings"></div>
+
+        <div class="row end">
+          <button class="btn ghost" id="lobby-leave">Lämna</button>
+          <button class="btn primary" id="lobby-start" disabled>Starta spelet</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-handover">
+      <div class="card center">
+        <div class="sub">Lämna över till</div>
+        <div class="big-name" id="handover-name">–</div>
+        <p class="sub">Inga tjuvkikar nu!</p>
+        <button class="btn primary wide" id="handover-go">Jag är redo</button>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="screen-results">
+      <div class="card">
+        <h1 id="results-title">Resultat</h1>
+        <p class="sub" id="results-sub"></p>
+        <ol class="leaderboard" id="results-list"></ol>
+        <div class="row end">
+          <button class="btn ghost" id="results-home">Till menyn</button>
+          <button class="btn primary" id="results-again">Spela igen</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
